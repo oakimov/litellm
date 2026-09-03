@@ -11,6 +11,9 @@ from typing_extensions import TypedDict
 import litellm
 from litellm._logging import verbose_logger
 from litellm.litellm_core_utils.asyncify import run_async_function
+from litellm.llms.anthropic.experimental_pass_through.adapters.streaming_iterator import (
+    AnthropicStreamWrapper,
+)
 from litellm.llms.anthropic.experimental_pass_through.adapters.transformation import (
     AnthropicAdapter,
 )
@@ -615,12 +618,16 @@ class LiteLLMMessagesToCompletionTransformationHandler:
         completion_response: Final = await litellm.acompletion(**completion_kwargs)
 
         if stream:
+            estimated_input_tokens = AnthropicStreamWrapper._estimate_anthropic_input_tokens(
+                messages=effective_messages, system=effective_system, tools=tools
+            )
             transformed_stream: Final = ANTHROPIC_ADAPTER.translate_completion_output_params_streaming(
                 completion_response,
                 model=local_model_name(model, kwargs.get("custom_llm_provider")),
                 tool_name_mapping=tool_name_mapping,
                 polyfill_result=polyfill_result,
                 is_async=True,
+                estimated_input_tokens=estimated_input_tokens,
             )
             if transformed_stream is not None:
                 return transformed_stream
@@ -749,12 +756,16 @@ class LiteLLMMessagesToCompletionTransformationHandler:
         completion_response: Final = litellm.completion(**completion_kwargs)
 
         if stream:
+            estimated_input_tokens = AnthropicStreamWrapper._estimate_anthropic_input_tokens(
+                messages=effective_messages, system=effective_system, tools=tools
+            )
             transformed_stream: Final = ANTHROPIC_ADAPTER.translate_completion_output_params_streaming(
                 completion_response,
                 model=local_model_name(model, kwargs.get("custom_llm_provider")),
                 tool_name_mapping=tool_name_mapping,
                 polyfill_result=polyfill_result,
                 is_async=False,
+                estimated_input_tokens=estimated_input_tokens,
             )
             if transformed_stream is not None:
                 return transformed_stream

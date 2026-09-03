@@ -27,13 +27,66 @@ class AnthropicResponsesStreamWrapper:
       response.completed                 -> message_delta + message_stop
     """
 
+    @staticmethod
+    def _estimate_anthropic_input_tokens(
+        messages: Any,
+        system: Any,
+        tools: Any,
+    ) -> int:
+        """Chars/4 estimate of the original Anthropic request — mirrors
+        CCR's cursor-sdk/usage.ts estimateRequestPromptTokens (c41f8053).
+        Enough to trip Claude Code autocompact on message_start before
+        final usage arrives on message_delta."""
+        import json as _json
+        import math as _math
+
+        def _to_text(value: Any) -> str:
+            if isinstance(value, str):
+                return value
+            if value is None:
+                return ""
+            try:
+                return _json.dumps(value, ensure_ascii=False)
+            except Exception:
+                return str(value)
+
+        parts: list[str] = []
+        if system is not None:
+            parts.append(_to_text(system))
+        if isinstance(messages, list):
+            for msg in messages:
+                if not isinstance(msg, dict):
+                    parts.append(_to_text(msg))
+                    continue
+                content = msg.get("content")
+                parts.append(_to_text(content))
+                thinking = msg.get("thinking")
+                if isinstance(thinking, dict):
+                    t = thinking.get("thinking") or thinking.get("text") or ""
+                    if t:
+                        parts.append(str(t))
+                if isinstance(content, list):
+                    for block in content:
+                        if isinstance(block, dict) and block.get("type") == "tool_result":
+                            parts.append(_to_text(block.get("content")))
+        if tools:
+            parts.append(_to_text(tools))
+        total_chars = len("\n".join(parts))
+        if total_chars <= 0:
+            return 0
+        return int(_math.ceil(total_chars / 4))
+
     def __init__(
         self,
         responses_stream: Any,
         model: str,
+        estimated_input_tokens: int | None = None,
     ) -> None:
         self.responses_stream = responses_stream
         self.model = model
+        self._estimated_input_tokens: int | None = (
+            int(estimated_input_tokens) if isinstance(estimated_input_tokens, int) and estimated_input_tokens >= 0 else None
+        )
         self._message_id: str = f"msg_{uuid.uuid4()}"
         self._current_block_index: int = -1
         # Map item_id -> content_block_index so we can stop the right block later
@@ -56,7 +109,7 @@ class AnthropicResponsesStreamWrapper:
                 "stop_reason": None,
                 "stop_sequence": None,
                 "usage": {
-                    "input_tokens": 0,
+                    "input_tokens": self._estimated_input_tokens or 0,
                     "output_tokens": 0,
                     "cache_creation_input_tokens": 0,
                     "cache_read_input_tokens": 0,
@@ -183,7 +236,7 @@ class AnthropicResponsesStreamWrapper:
             )
             return
 
-        # ---- output item done -> content_block_stop ----
+        # ---- output item done -> optional signature_delta + content_block_stop ----
         if event_type == "response.output_item.done":
             item = getattr(event, "item", None) or (event.get("item") if isinstance(event, dict) else None)
             item_id = (
@@ -192,6 +245,25 @@ class AnthropicResponsesStreamWrapper:
             block_idx = self._item_id_to_block_index.get(item_id, -1) if item_id else self._current_block_index
             if block_idx < 0:
                 return
+            item_type: Final = getattr(item, "type", None) or (item.get("type") if isinstance(item, dict) else None)
+            encrypted_content: Final = getattr(item, "encrypted_content", None) or (
+                item.get("encrypted_content") if isinstance(item, dict) else None
+            )
+            if (
+                item_type == "reasoning"
+                and isinstance(encrypted_content, str)
+                and encrypted_content
+            ):
+                self._chunk_queue.append(
+                    {
+                        "type": "content_block_delta",
+                        "index": block_idx,
+                        "delta": {
+                            "type": "signature_delta",
+                            "signature": encrypted_content,
+                        },
+                    }
+                )
             self._chunk_queue.append(
                 {
                     "type": "content_block_stop",

@@ -1,4 +1,5 @@
 import json
+import logging
 import re
 import time
 from collections.abc import Callable, Mapping, Sequence
@@ -965,6 +966,22 @@ class AnthropicConfig(AnthropicModelInfo, BaseConfig):
                             mcp_servers.append(nested_mcp)
             elif "input_schema" in tool:  # assume in anthropic format
                 anthropic_tools.append(tool)
+            elif "function" not in tool:
+                tool_name = tool.get("name", tool.get("type", "unknown"))
+                if tool.get("type") == "function":
+                    logging.error(
+                        "_map_tools: skipping tool with type='function' but "
+                        "no 'function' key -- this looks like a malformed "
+                        "OpenAI tool definition (name=%s)",
+                        tool_name,
+                    )
+                else:
+                    litellm.verbose_logger.warning(
+                        "_map_tools: skipping tool without input_schema or "
+                        "function key (type=%s)",
+                        tool_name,
+                    )
+                continue
             else:  # assume openai tool call
                 new_tool, mcp_server_tool = self._map_tool_helper(tool)
 

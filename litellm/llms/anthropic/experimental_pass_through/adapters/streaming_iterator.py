@@ -279,6 +279,55 @@ class AnthropicStreamWrapper(AdapterCompletionStreamWrapper):
     queued_usage_chunk: bool = False
     current_content_block_index: int = 0
 
+    @staticmethod
+    def _estimate_anthropic_input_tokens(
+        messages: Any,
+        system: Any,
+        tools: Any,
+    ) -> int:
+        """Chars/4 estimate of the original Anthropic request — mirrors
+        CCR's cursor-sdk/usage.ts estimateRequestPromptTokens (c41f8053).
+        Enough to trip Claude Code autocompact on message_start before
+        final usage arrives on message_delta."""
+        import json as _json
+        import math as _math
+
+        def _to_text(value: Any) -> str:
+            if isinstance(value, str):
+                return value
+            if value is None:
+                return ""
+            try:
+                return _json.dumps(value, ensure_ascii=False)
+            except Exception:
+                return str(value)
+
+        parts: list[str] = []
+        if system is not None:
+            parts.append(_to_text(system))
+        if isinstance(messages, list):
+            for msg in messages:
+                if not isinstance(msg, dict):
+                    parts.append(_to_text(msg))
+                    continue
+                content = msg.get("content")
+                parts.append(_to_text(content))
+                thinking = msg.get("thinking")
+                if isinstance(thinking, dict):
+                    t = thinking.get("thinking") or thinking.get("text") or ""
+                    if t:
+                        parts.append(str(t))
+                if isinstance(content, list):
+                    for block in content:
+                        if isinstance(block, dict) and block.get("type") == "tool_result":
+                            parts.append(_to_text(block.get("content")))
+        if tools:
+            parts.append(_to_text(tools))
+        total_chars = len("\n".join(parts))
+        if total_chars <= 0:
+            return 0
+        return int(_math.ceil(total_chars / 4))
+
     def __init__(
         self,
         completion_stream: _ChunkStream,
@@ -287,12 +336,16 @@ class AnthropicStreamWrapper(AdapterCompletionStreamWrapper):
         applied_edits: list[AppliedEdit] | None = None,
         compaction_block: CompactionBlock | None = None,
         iterations_usage: list[UsageIteration] | None = None,
+        estimated_input_tokens: int | None = None,
     ):
         # Wrap the upstream stream so chunks that carry both content and a
         # finish_reason (fake-streamed providers) are split into two — see
         # _CombinedChunkSplitter.
         super().__init__(_CombinedChunkSplitter(completion_stream))
         self.model = model
+        self._estimated_input_tokens: int | None = (
+            int(estimated_input_tokens) if isinstance(estimated_input_tokens, int) and estimated_input_tokens >= 0 else None
+        )
         # Mapping of truncated tool names to original names (for OpenAI's 64-char limit)
         self.tool_name_mapping = tool_name_mapping or {}
         # Polyfill applied_edits on final message_delta.
@@ -475,18 +528,15 @@ class AnthropicStreamWrapper(AdapterCompletionStreamWrapper):
         """
         Create the initial UsageDelta for the message_start event.
 
-        Initializes cache token fields (cache_creation_input_tokens, cache_read_input_tokens)
-        to 0 to indicate to clients (like Claude Code) that prompt caching is supported.
-
-        The actual cache token values will be provided in the message_delta event at the
-        end of the stream, since Bedrock Converse API only returns usage data in the final
-        response chunk.
-
-        Returns:
-            UsageDelta with all token counts initialized to 0.
+        Native Anthropic puts input/cache on message_start and output on
+        message_delta (output_tokens:0 here avoids double-count for clients
+        that sum start+delta). For LiteLLM the final Bedrock/OpenAI usage
+        only arrives on message_delta; emit a chars/4 estimate here so
+        Claude Code autocompact (CLAUDE_AUTOCOMPACT_PCT_OVERRIDE) trips
+        before the stream ends — mirrors CCR c41f8053.
         """
         return UsageDelta(
-            input_tokens=0,
+            input_tokens=self._estimated_input_tokens or 0,
             output_tokens=0,
             cache_creation_input_tokens=0,
             cache_read_input_tokens=0,

@@ -264,6 +264,7 @@ class AnthropicAdapter:
         tool_name_mapping: dict[str, str] | None = None,
         polyfill_result: PolyfillResult | None = None,
         is_async: bool = True,
+        estimated_input_tokens: int | None = None,
     ) -> AsyncIterator[bytes] | Iterator[bytes] | None:
         """
         Translate OpenAI streaming response to Anthropic format.
@@ -290,6 +291,7 @@ class AnthropicAdapter:
             applied_edits=applied_edits,
             compaction_block=compaction_block,
             iterations_usage=iterations_usage,
+            estimated_input_tokens=estimated_input_tokens,
         )
         # Return the SSE-wrapped version for proper event formatting.
         if is_async:

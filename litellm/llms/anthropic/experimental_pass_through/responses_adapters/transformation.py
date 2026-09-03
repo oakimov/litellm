@@ -603,6 +603,10 @@ class LiteLLMAnthropicToResponsesAPIAdapter:
             if prompt_cache_key is not None:
                 responses_kwargs["prompt_cache_key"] = prompt_cache_key
 
+        # Always request reasoning ciphertext — CCR cache replays it verbatim.
+        responses_kwargs["include"] = ["reasoning.encrypted_content"]
+        responses_kwargs["store"] = False
+
         return responses_kwargs
 
     # ------------------------------------------------------------------ #

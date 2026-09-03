@@ -185,8 +185,13 @@ class LiteLLMMessagesToResponsesAPIHandler:
         result: Final = await litellm.aresponses(**responses_kwargs)
 
         if stream:
+            estimated_input_tokens = AnthropicResponsesStreamWrapper._estimate_anthropic_input_tokens(
+                messages=messages, system=system, tools=tools
+            )
             wrapper: Final = AnthropicResponsesStreamWrapper(
-                responses_stream=result, model=local_model_name(model, kwargs.get("custom_llm_provider"))
+                responses_stream=result,
+                model=local_model_name(model, kwargs.get("custom_llm_provider")),
+                estimated_input_tokens=estimated_input_tokens,
             )
             return wrapper.async_anthropic_sse_wrapper()
 
@@ -265,8 +270,13 @@ class LiteLLMMessagesToResponsesAPIHandler:
         result: Final = litellm.responses(**responses_kwargs)
 
         if stream:
+            estimated_input_tokens = AnthropicResponsesStreamWrapper._estimate_anthropic_input_tokens(
+                messages=messages, system=system, tools=tools
+            )
             wrapper: Final = AnthropicResponsesStreamWrapper(
-                responses_stream=result, model=local_model_name(model, kwargs.get("custom_llm_provider"))
+                responses_stream=result,
+                model=local_model_name(model, kwargs.get("custom_llm_provider")),
+                estimated_input_tokens=estimated_input_tokens,
             )
             return wrapper.async_anthropic_sse_wrapper()
 

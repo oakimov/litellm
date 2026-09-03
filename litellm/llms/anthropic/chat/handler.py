@@ -1081,7 +1081,7 @@ class ModelResponseIterator:
                     StreamingChoices(
                         index=index,
                         delta=Delta(
-                            content=text,
+                            content=text or None,
                             tool_calls=[tool_use] if tool_use is not None else None,
                             provider_specific_fields=(provider_specific_fields if provider_specific_fields else None),
                             thinking_blocks=(thinking_blocks if thinking_blocks else None),
