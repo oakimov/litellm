@@ -13,6 +13,9 @@ import litellm
 from litellm._logging import verbose_logger
 from litellm.litellm_core_utils.asyncify import run_async_function
 from litellm.litellm_core_utils.litellm_logging import Logging as LiteLLMLoggingObject
+from litellm.llms.anthropic.pass_through.adapters.streaming_iterator import (
+    AnthropicStreamWrapper,
+)
 from litellm.llms.anthropic.pass_through.adapters.transformation import (
     AnthropicAdapter,
 )
@@ -735,6 +738,9 @@ class LiteLLMMessagesToCompletionTransformationHandler:
         logging_obj: Final = litellm_logging_obj_from_kwargs(kwargs)
 
         if stream:
+            estimated_input_tokens = AnthropicStreamWrapper._estimate_anthropic_input_tokens(
+                messages=effective_messages, system=effective_system, tools=tools
+            )
             transformed_stream: Final = ANTHROPIC_ADAPTER.translate_completion_output_params_streaming(
                 completion_response,
                 model=local_model_name(model, kwargs.get("custom_llm_provider")),
@@ -743,6 +749,7 @@ class LiteLLMMessagesToCompletionTransformationHandler:
                 is_async=True,
                 litellm_logging_obj=logging_obj,
                 safeguards_evaluator=safeguards_evaluator,
+                estimated_input_tokens=estimated_input_tokens,
             )
             if transformed_stream is not None:
                 return transformed_stream
@@ -876,6 +883,9 @@ class LiteLLMMessagesToCompletionTransformationHandler:
         logging_obj: Final = litellm_logging_obj_from_kwargs(kwargs)
 
         if stream:
+            estimated_input_tokens = AnthropicStreamWrapper._estimate_anthropic_input_tokens(
+                messages=effective_messages, system=effective_system, tools=tools
+            )
             transformed_stream: Final = ANTHROPIC_ADAPTER.translate_completion_output_params_streaming(
                 completion_response,
                 model=local_model_name(model, kwargs.get("custom_llm_provider")),
@@ -883,6 +893,7 @@ class LiteLLMMessagesToCompletionTransformationHandler:
                 polyfill_result=polyfill_result,
                 is_async=False,
                 litellm_logging_obj=logging_obj,
+                estimated_input_tokens=estimated_input_tokens,
             )
             if transformed_stream is not None:
                 return transformed_stream
