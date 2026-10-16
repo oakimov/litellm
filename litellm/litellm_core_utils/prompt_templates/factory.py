@@ -117,6 +117,10 @@ DEFAULT_ASSISTANT_CONTINUE_MESSAGE: Final = ChatCompletionAssistantMessage(
 )  # similar to autogen. Only used if `litellm.modify_params=True`.
 
 
+# used as a filler for empty/whitespace-only user messages
+_DEFAULT_EMPTY_CONTENT_MESSAGE = "."
+
+
 def map_system_message_pt(messages: list) -> list:
     """
     Convert 'system' message to 'user' message if provider doesn't support 'system' role.
@@ -1115,7 +1119,7 @@ def anthropic_messages_pt_xml(messages: list):
 
     if not new_messages or new_messages[0]["role"] != "user":
         if litellm.modify_params:
-            new_messages.insert(0, {"role": "user", "content": [{"type": "text", "text": "."}]})
+            new_messages.insert(0, {"role": "user", "content": [{"type": "text", "text": _DEFAULT_EMPTY_CONTENT_MESSAGE}]})
         else:
             raise Exception(
                 "Invalid first message. Should always start with 'role'='user' for Anthropic. System prompt is sent separately for Anthropic. set 'litellm.modify_params = True' or 'litellm_settings:modify_params = True' on proxy, to insert a placeholder user message - '.' as the first message, "

@@ -50,11 +50,14 @@ def _attempt_json_repair(s: str) -> object | None:
             if opener_stack and opener_stack[-1] == ch:
                 opener_stack.pop()
 
-    if not opener_stack:
-        return None
+    if in_string:
+        candidate = stripped.rstrip("\\") if escape_next else stripped
+        candidate += '"'
+    else:
+        candidate = stripped.rstrip(",")
 
-    # Remove trailing comma before we close brackets
-    candidate = stripped.rstrip(",")
+    if not opener_stack and not in_string:
+        return None
 
     # Close in reverse order of opening (respects nesting)
     candidate += "".join(reversed(opener_stack))
@@ -65,6 +68,31 @@ def _attempt_json_repair(s: str) -> object | None:
         pass
 
     return None
+
+
+def _escape_raw_newlines_in_json(s: str) -> str:
+    """Escape raw newline/CR chars that appear inside JSON string values."""
+    result: Final[list[str]] = []
+    in_string = False
+    escape_next = False
+    for ch in s:
+        if escape_next:
+            escape_next = False
+            result.append(ch)
+            continue
+        if ch == "\\":
+            escape_next = True
+            result.append(ch)
+            continue
+        if ch == '"':
+            in_string = not in_string
+            result.append(ch)
+            continue
+        if in_string and ch in "\n\r":
+            result.append("\\n" if ch == "\n" else "\\r")
+            continue
+        result.append(ch)
+    return "".join(result)
 
 
 def parse_tool_call_arguments(
@@ -97,6 +125,8 @@ def parse_tool_call_arguments(
 
     if not arguments or not arguments.strip():
         return {}
+
+    arguments = _escape_raw_newlines_in_json(arguments)
 
     try:
         return _DECODED_JSON.validate_python(json.loads(arguments))
