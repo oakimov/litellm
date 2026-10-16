@@ -446,12 +446,16 @@ class LiteLLMMessagesToResponsesAPIHandler:
         result: Final = await litellm.aresponses(**responses_kwargs)
 
         if stream:
+            estimated_input_tokens = AnthropicResponsesStreamWrapper._estimate_anthropic_input_tokens(
+                messages=messages, system=system, tools=tools
+            )
             wrapper: Final = AnthropicResponsesStreamWrapper(
                 responses_stream=result,
                 model=local_model_name(model, kwargs.get("custom_llm_provider")),
                 litellm_logging_obj=litellm_logging_obj_from_kwargs(responses_kwargs),
                 safeguards_evaluator=safeguards_evaluator,
                 applied_edits=polyfill_result.applied_edits_for_response() if polyfill_result else None,
+                estimated_input_tokens=estimated_input_tokens,
             )
             return wrapper.async_anthropic_sse_wrapper()
 
@@ -549,11 +553,15 @@ class LiteLLMMessagesToResponsesAPIHandler:
         result: Final = litellm.responses(**responses_kwargs)
 
         if stream:
+            estimated_input_tokens = AnthropicResponsesStreamWrapper._estimate_anthropic_input_tokens(
+                messages=messages, system=system, tools=tools
+            )
             wrapper: Final = AnthropicResponsesStreamWrapper(
                 responses_stream=result,
                 model=local_model_name(model, kwargs.get("custom_llm_provider")),
                 litellm_logging_obj=litellm_logging_obj_from_kwargs(responses_kwargs),
                 applied_edits=polyfill_result.applied_edits_for_response() if polyfill_result else None,
+                estimated_input_tokens=estimated_input_tokens,
             )
             return wrapper.async_anthropic_sse_wrapper()
 

@@ -638,6 +638,55 @@ class AnthropicStreamWrapper(AdapterCompletionStreamWrapper):
     queued_usage_chunk: bool = False
     current_content_block_index: int = 0
 
+    @staticmethod
+    def _estimate_anthropic_input_tokens(
+        messages: Any,
+        system: Any,
+        tools: Any,
+    ) -> int:
+        """Chars/4 estimate of the original Anthropic request — mirrors
+        CCR's cursor-sdk/usage.ts estimateRequestPromptTokens (c41f8053).
+        Enough to trip Claude Code autocompact on message_start before
+        final usage arrives on message_delta."""
+        import json as _json
+        import math as _math
+
+        def _to_text(value: Any) -> str:
+            if isinstance(value, str):
+                return value
+            if value is None:
+                return ""
+            try:
+                return _json.dumps(value, ensure_ascii=False)
+            except Exception:
+                return str(value)
+
+        parts: list[str] = []
+        if system is not None:
+            parts.append(_to_text(system))
+        if isinstance(messages, list):
+            for msg in messages:
+                if not isinstance(msg, dict):
+                    parts.append(_to_text(msg))
+                    continue
+                content = msg.get("content")
+                parts.append(_to_text(content))
+                thinking = msg.get("thinking")
+                if isinstance(thinking, dict):
+                    t = thinking.get("thinking") or thinking.get("text") or ""
+                    if t:
+                        parts.append(str(t))
+                if isinstance(content, list):
+                    for block in content:
+                        if isinstance(block, dict) and block.get("type") == "tool_result":
+                            parts.append(_to_text(block.get("content")))
+        if tools:
+            parts.append(_to_text(tools))
+        total_chars = len("\n".join(parts))
+        if total_chars <= 0:
+            return 0
+        return int(_math.ceil(total_chars / 4))
+
     def __init__(
         self,
         completion_stream: _ChunkStream,
@@ -649,6 +698,7 @@ class AnthropicStreamWrapper(AdapterCompletionStreamWrapper):
         litellm_logging_obj: "LiteLLMLoggingObject | None" = None,
         safeguards_evaluator: "SafeguardsEvaluator | None" = None,
         completion_request: Mapping[str, object] | None = None,
+        estimated_input_tokens: int | None = None,
     ):
         # Wrap the upstream stream so chunks that carry both content and a
         # finish_reason (fake-streamed providers) are split into two — see
@@ -663,6 +713,9 @@ class AnthropicStreamWrapper(AdapterCompletionStreamWrapper):
             litellm_logging_obj.record_streamed_anthropic_message_id(self._message_id)
         self.litellm_logging_obj = litellm_logging_obj
         self.safeguards_evaluator: Final = safeguards_evaluator
+        self._estimated_input_tokens: int | None = (
+            int(estimated_input_tokens) if isinstance(estimated_input_tokens, int) and estimated_input_tokens >= 0 else None
+        )
         # Mapping of truncated tool names to original names (for OpenAI's 64-char limit)
         self.tool_name_mapping = tool_name_mapping or {}
         # Polyfill applied_edits on final message_delta.
@@ -860,14 +913,21 @@ class AnthropicStreamWrapper(AdapterCompletionStreamWrapper):
         """
         Optionally estimate prompt tokens without consuming upstream chunks.
 
-        Output and cache counts start at zero. Provider usage in message_delta
-        remains authoritative. Failed estimates fall back to zero.
+        Prefer an explicit chars/4 estimate from the Anthropic request so
+        Claude Code autocompact can trip on message_start before final usage
+        arrives on message_delta. Otherwise honor the upstream gated
+        completion_request estimate. Output and cache counts start at zero.
+        Provider usage in message_delta remains authoritative.
         """
         return UsageDelta(
             input_tokens=(
-                self._estimate_initial_input_tokens()
-                if litellm.anthropic_messages_estimate_initial_input_tokens is True
-                else 0
+                self._estimated_input_tokens
+                if self._estimated_input_tokens is not None
+                else (
+                    self._estimate_initial_input_tokens()
+                    if litellm.anthropic_messages_estimate_initial_input_tokens is True
+                    else 0
+                )
             ),
             output_tokens=0,
             cache_creation_input_tokens=0,

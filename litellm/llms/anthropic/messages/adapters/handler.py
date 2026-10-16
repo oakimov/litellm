@@ -20,6 +20,9 @@ from litellm.litellm_core_utils.tool_fields import (
     drops_mcp_servers,
     tools_without_mcp_servers,
 )
+from litellm.llms.anthropic.messages.adapters.streaming_iterator import (
+    AnthropicStreamWrapper,
+)
 from litellm.llms.anthropic.messages.adapters.transformation import (
     AnthropicAdapter,
 )
@@ -829,6 +832,9 @@ class LiteLLMMessagesToCompletionTransformationHandler:
         logging_obj: Final = litellm_logging_obj_from_kwargs(kwargs)
 
         if stream:
+            estimated_input_tokens = AnthropicStreamWrapper._estimate_anthropic_input_tokens(
+                messages=effective_messages, system=effective_system, tools=tools
+            )
             transformed_stream: Final = ANTHROPIC_ADAPTER.translate_completion_output_params_streaming(
                 completion_response,
                 model=local_model_name(model, kwargs.get("custom_llm_provider")),
@@ -838,6 +844,7 @@ class LiteLLMMessagesToCompletionTransformationHandler:
                 completion_request=completion_kwargs,
                 litellm_logging_obj=logging_obj,
                 safeguards_evaluator=safeguards_evaluator,
+                estimated_input_tokens=estimated_input_tokens,
             )
             if transformed_stream is not None:
                 return transformed_stream
@@ -976,6 +983,9 @@ class LiteLLMMessagesToCompletionTransformationHandler:
         logging_obj: Final = litellm_logging_obj_from_kwargs(kwargs)
 
         if stream:
+            estimated_input_tokens = AnthropicStreamWrapper._estimate_anthropic_input_tokens(
+                messages=effective_messages, system=effective_system, tools=tools
+            )
             transformed_stream: Final = ANTHROPIC_ADAPTER.translate_completion_output_params_streaming(
                 completion_response,
                 model=local_model_name(model, kwargs.get("custom_llm_provider")),
@@ -984,6 +994,7 @@ class LiteLLMMessagesToCompletionTransformationHandler:
                 is_async=False,
                 completion_request=completion_kwargs,
                 litellm_logging_obj=logging_obj,
+                estimated_input_tokens=estimated_input_tokens,
             )
             if transformed_stream is not None:
                 return transformed_stream
