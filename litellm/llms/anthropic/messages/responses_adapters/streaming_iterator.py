@@ -127,9 +127,9 @@ class AnthropicResponsesStreamWrapper:
 
     @staticmethod
     def _estimate_anthropic_input_tokens(
-        messages: Any,
-        system: Any,
-        tools: Any,
+        messages: object,
+        system: object,
+        tools: object,
     ) -> int:
         """Chars/4 estimate of the original Anthropic request — mirrors
         CCR's cursor-sdk/usage.ts estimateRequestPromptTokens (c41f8053).
@@ -138,7 +138,7 @@ class AnthropicResponsesStreamWrapper:
         import json as _json
         import math as _math
 
-        def _to_text(value: Any) -> str:
+        def _to_text(value: object) -> str:
             if isinstance(value, str):
                 return value
             if value is None:
